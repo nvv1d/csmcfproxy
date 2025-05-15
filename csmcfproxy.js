@@ -1,7 +1,7 @@
 // Cloudflare Worker script for Sesame AI proxy
 
 // Configuration - change this to your actual worker domain once deployed
-const WORKER_DOMAIN = "your-worker-name.your-account.workers.dev";
+const WORKER_DOMAIN = "csmcfproxy.nvv1d.workers.dev";
 
 // Main handler for incoming requests
 addEventListener('fetch', event => {
