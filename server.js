@@ -7,7 +7,7 @@ const app = express();
 
 // Configuration
 const PORT = process.env.PORT || 8080;
-const RAILWAY_DOMAIN = process.env.RAILWAY_STATIC_URL || "your-railway-app.up.railway.app";
+const RAILWAY_DOMAIN = process.env.RAILWAY_STATIC_URL || "https://csmcfproxy-production.up.railway.app";
 
 // WebSocket server setup
 const server = http.createServer(app);
