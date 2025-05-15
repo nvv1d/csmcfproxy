@@ -6,8 +6,8 @@ const WebSocket = require('ws');
 const app = express();
 
 // Configuration
-const PORT = process.env.PORT || 3000;
-const RAILWAY_DOMAIN = process.env.RAILWAY_STATIC_URL || "https://csmcfproxy-production.up.railway.app";
+const PORT = process.env.PORT || 8080;
+const RAILWAY_DOMAIN = process.env.RAILWAY_STATIC_URL || "your-railway-app.up.railway.app";
 
 // WebSocket server setup
 const server = http.createServer(app);
@@ -107,7 +107,7 @@ const modifyResponse = (proxyRes, req, res) => {
                 demoSection.scrollIntoView();
                 
                 // Optional: Hide other content
-                document.querySelectorAll('body > *:not(:has(#demo))').forEach(el => {
+                document.querySelectorAll('body > *').forEach(el => {
                   if (!el.contains(demoSection) && !demoSection.contains(el)) {
                     el.style.display = 'none';
                   }
@@ -136,23 +136,29 @@ const modifyResponse = (proxyRes, req, res) => {
       </body>`);
       
       // Send the modified response
-      res.set('content-length', modifiedBody.length);
-      res.send(modifiedBody);
+      // IMPORTANT: Don't try to set headers individually after sending the body
+      res.writeHead(proxyRes.statusCode, {
+        ...proxyRes.headers,
+        'content-length': Buffer.byteLength(modifiedBody)
+      });
+      res.end(modifiedBody);
     });
     
     return true; // Indicates that we'll handle the response body
   }
+  // For non-HTML responses, let the proxy middleware handle it normally
+  return false;
 };
 
 // Create proxy middleware specifically for the demo page
-const targetUrl = 'https://www.sesame.com/research/crossing_the_uncanny_valley_of_voice#demo';
 const proxyOptions = {
   target: 'https://www.sesame.com',
   changeOrigin: true,
   pathRewrite: function (path) {
-    // Always rewrite to the demo URL path
+    // Always rewrite to the demo URL path regardless of the requested path
     return '/research/crossing_the_uncanny_valley_of_voice';
   },
+  selfHandleResponse: true,  // We'll handle the response ourselves
   onProxyRes: modifyResponse,
   headers: {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36',
@@ -163,6 +169,52 @@ const proxyOptions = {
 
 // Apply the proxy middleware to all routes
 app.use('/', createProxyMiddleware(proxyOptions));
+
+// Handle errors
+app.use((err, req, res, next) => {
+  console.error('Error in proxy:', err);
+  if (!res.headersSent) {
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Sesame Voice Research Demo</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+          }
+          .container {
+            max-width: 600px;
+            padding: 30px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          }
+          h1 { color: #333; }
+          p { color: #666; line-height: 1.6; }
+          .footer { margin-top: 30px; font-size: 12px; color: #888; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>Connection Issue</h1>
+          <p>We're unable to connect to the Sesame Voice Research Demo server at this time. Please try again later.</p>
+          <div class="footer">© 2025 Sesame AI Inc. All rights reserved.</div>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+});
 
 // Start the server
 server.listen(PORT, () => {
