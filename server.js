@@ -1,100 +1,71 @@
-// server.js
-const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
-const http = require('http');
-const WebSocket = require('ws');
-const app = express();
+// pages/api/[[...path]].js
+import { NextResponse } from 'next/server';
 
 // Configuration
-const PORT = process.env.PORT || 8080;
-const RAILWAY_DOMAIN = process.env.RAILWAY_STATIC_URL || "https://csmcfproxy-production.up.railway.app";
+const VERCEL_DOMAIN = process.env.VERCEL_URL || "https://csmcfproxy.vercel.app";
 
-// WebSocket server setup
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ noServer: true });
+export const config = {
+  runtime: 'edge',
+};
 
-// Handle WebSocket connections
-server.on('upgrade', (request, socket, head) => {
-  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-  
-  // Determine target based on the request path
-  let wsTarget;
-  if (pathname.includes('agent-service')) {
-    wsTarget = "wss://sesameai.app/agent-service-0/v1/connect";
-  } else {
-    wsTarget = "wss://sesameai.app" + pathname;
-  }
-  
-  // Create a WebSocket connection to the target
-  const targetWs = new WebSocket(wsTarget, {
-    headers: {
-      'Origin': 'https://www.sesame.com',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'
+export default async function handler(req) {
+  try {
+    // Only allow access to the demo page
+    const demoUrl = 'https://www.sesame.com/research/crossing_the_uncanny_valley_of_voice#demo';
+    
+    // Extract path for WebSocket handling
+    const url = new URL(req.url);
+    
+    // Handle WebSocket connections
+    if (req.headers.get('Upgrade') === 'websocket') {
+      // This is a WebSocket connection request
+      let wsTarget;
+      if (url.pathname.includes('agent-service')) {
+        wsTarget = "wss://sesameai.app/agent-service-0/v1/connect";
+      } else {
+        wsTarget = "wss://sesameai.app" + url.pathname;
+      }
+      
+      // For websocket connections, we need to return a 101 response
+      // Note: Next.js Edge Runtime doesn't directly support WebSockets
+      // You'd need to use a WebSocket-capable service behind this
+      return new Response('WebSockets not supported directly in this version', { status: 501 });
     }
-  });
-  
-  // Handle the connection setup
-  targetWs.on('open', () => {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      // Create bidirectional message forwarding
-      targetWs.on('message', (message) => {
-        ws.send(message);
-      });
-      
-      ws.on('message', (message) => {
-        targetWs.send(message);
-      });
-      
-      // Handle connection closures
-      targetWs.on('close', (code, reason) => {
-        ws.close(code, reason);
-      });
-      
-      ws.on('close', (code, reason) => {
-        targetWs.close(code, reason);
-      });
-      
-      // Handle errors
-      targetWs.on('error', (err) => {
-        console.error('Target WebSocket error:', err);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.close(1011, 'Error in target WebSocket');
-        }
-      });
-      
-      ws.on('error', (err) => {
-        console.error('Client WebSocket error:', err);
-        if (targetWs.readyState === WebSocket.OPEN) {
-          targetWs.close(1011, 'Error in client WebSocket');
-        }
-      });
-    });
-  });
-  
-  targetWs.on('error', (err) => {
-    console.error('Error connecting to target WebSocket:', err);
-    socket.destroy();
-  });
-});
-
-// Create middleware to modify HTML responses
-const modifyResponse = (proxyRes, req, res) => {
-  // Only process HTML responses
-  if (proxyRes.headers['content-type'] && proxyRes.headers['content-type'].includes('text/html')) {
-    let body = '';
-    proxyRes.on('data', (chunk) => {
-      body += chunk;
+    
+    // Regular HTTP request - always redirect to the demo page
+    const modifiedRequest = new Request(demoUrl, {
+      method: req.method,
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : null,
+      headers: new Headers(req.headers),
+      redirect: 'follow',
     });
     
-    proxyRes.on('end', () => {
-      // Replace domain references
-      let modifiedBody = body;
-      modifiedBody = modifiedBody.replace(/https:\/\/www\.sesame\.com/g, `https://${RAILWAY_DOMAIN}`);
-      modifiedBody = modifiedBody.replace(/https:\/\/sesame\.com/g, `https://${RAILWAY_DOMAIN}`);
-      modifiedBody = modifiedBody.replace(/wss:\/\/sesameai\.app/g, `wss://${RAILWAY_DOMAIN}`);
+    // Clean up headers
+    modifiedRequest.headers.delete('host');
+    modifiedRequest.headers.set('host', 'www.sesame.com');
+    modifiedRequest.headers.set('origin', 'https://www.sesame.com');
+    modifiedRequest.headers.set('referer', 'https://www.sesame.com/');
+    modifiedRequest.headers.set('user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36');
+    
+    // Fetch from the original site
+    const response = await fetch(modifiedRequest);
+    const contentType = response.headers.get('content-type') || '';
+    
+    // Process the response content for text-based responses
+    if (contentType.includes('text/html') || 
+        contentType.includes('application/javascript') || 
+        contentType.includes('text/javascript') ||
+        contentType.includes('application/json')) {
       
-      // Add script to focus on demo section
-      modifiedBody = modifiedBody.replace('</body>', `
+      let text = await response.text();
+      
+      // Replace domain references
+      text = text.replace(/https:\/\/www\.sesame\.com/g, `https://${VERCEL_DOMAIN}`);
+      text = text.replace(/https:\/\/sesame\.com/g, `https://${VERCEL_DOMAIN}`);
+      text = text.replace(/wss:\/\/sesameai\.app/g, `wss://${VERCEL_DOMAIN}`);
+      
+      // Add JavaScript to ensure we only see the demo section
+      text = text.replace('</body>', `
         <script>
           // Wait for the page to fully load
           window.addEventListener('load', function() {
@@ -107,7 +78,7 @@ const modifyResponse = (proxyRes, req, res) => {
                 demoSection.scrollIntoView();
                 
                 // Optional: Hide other content
-                document.querySelectorAll('body > *').forEach(el => {
+                document.querySelectorAll('body > *:not(:has(#demo))').forEach(el => {
                   if (!el.contains(demoSection) && !demoSection.contains(el)) {
                     el.style.display = 'none';
                   }
@@ -135,46 +106,31 @@ const modifyResponse = (proxyRes, req, res) => {
         </script>
       </body>`);
       
-      // Send the modified response
-      // IMPORTANT: Don't try to set headers individually after sending the body
-      res.writeHead(proxyRes.statusCode, {
-        ...proxyRes.headers,
-        'content-length': Buffer.byteLength(modifiedBody)
+      // Create new response with modified content
+      const newHeaders = new Headers(response.headers);
+      newHeaders.set('Access-Control-Allow-Origin', '*');
+      newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      newHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      
+      return new Response(text, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders
       });
-      res.end(modifiedBody);
-    });
-    
-    return true; // Indicates that we'll handle the response body
-  }
-  // For non-HTML responses, let the proxy middleware handle it normally
-  return false;
-};
-
-// Create proxy middleware specifically for the demo page
-const proxyOptions = {
-  target: 'https://www.sesame.com',
-  changeOrigin: true,
-  pathRewrite: function (path) {
-    // Always rewrite to the demo URL path regardless of the requested path
-    return '/research/crossing_the_uncanny_valley_of_voice';
-  },
-  selfHandleResponse: true,  // We'll handle the response ourselves
-  onProxyRes: modifyResponse,
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36',
-    'Origin': 'https://www.sesame.com',
-    'Referer': 'https://www.sesame.com/'
-  }
-};
-
-// Apply the proxy middleware to all routes
-app.use('/', createProxyMiddleware(proxyOptions));
-
-// Handle errors
-app.use((err, req, res, next) => {
-  console.error('Error in proxy:', err);
-  if (!res.headersSent) {
-    res.status(500).send(`
+    } else {
+      // For binary responses
+      const newHeaders = new Headers(response.headers);
+      newHeaders.set('Access-Control-Allow-Origin', '*');
+      
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders
+      });
+    }
+  } catch (error) {
+    console.error('Error in handler:', error);
+    return new Response(`
       <!DOCTYPE html>
       <html>
       <head>
@@ -212,11 +168,12 @@ app.use((err, req, res, next) => {
         </div>
       </body>
       </html>
-    `);
+    `, {
+      status: 503,
+      headers: { 
+        'Content-Type': 'text/html',
+        'Access-Control-Allow-Origin': '*' 
+      }
+    });
   }
-});
-
-// Start the server
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+}
