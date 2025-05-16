@@ -125,7 +125,7 @@ async function handleWebSocketRequest(request) {
     const wsScheme = url.protocol === 'https:' ? 'wss:' : 'ws:';
 
     // Forward every path to sesameai.app
-    const wsTarget = `${wsScheme}//sesameai.app${pathAndQuery}`;
+    const wsTarget = `${wsScheme}//app.sesame.com${pathAndQuery}`;
 
     // Create the Cloudflare WebSocket pair
     const { 0: clientSocket, 1: serverSocket } = new WebSocketPair();
