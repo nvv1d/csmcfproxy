@@ -25,10 +25,10 @@ async function handleHttpRequest(request) {
     
     // Default path redirects to the demo page
     if (url.pathname === '/' || url.pathname === '') {
-      targetUrl = 'app.sesame.com';
+      targetUrl = 'https://app.sesame.com';
     } else {
-      // Otherwise, forward the request to the appropriate path on sesame.com
-      targetUrl = 'https://www.sesame.com' + url.pathname + url.search + url.hash;
+      // Otherwise, forward the request to the appropriate path on app.sesame.com
+      targetUrl = 'https://app.sesame.com' + url.pathname + url.search + url.hash;
     }
 
     // Create a new request with the original method, body, and headers
@@ -45,8 +45,8 @@ async function handleHttpRequest(request) {
     
     // Set host header to match target
     modifiedRequest.headers.set('host', new URL(targetUrl).hostname);
-    modifiedRequest.headers.set('origin', 'https://www.sesame.com');
-    modifiedRequest.headers.set('referer', 'https://www.sesame.com/');
+    modifiedRequest.headers.set('origin', 'https://app.sesame.com');
+    modifiedRequest.headers.set('referer', 'https://app.sesame.com/');
     
     // Add a good user agent to avoid being blocked
     modifiedRequest.headers.set('user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36');
@@ -66,6 +66,7 @@ async function handleHttpRequest(request) {
       let text = await response.text();
       
       // Replace all references to Sesame domains with our worker domain
+      text = text.replace(/https:\/\/app\.sesame\.com/g, `https://${WORKER_DOMAIN}`);
       text = text.replace(/https:\/\/www\.sesame\.com/g, `https://${WORKER_DOMAIN}`);
       text = text.replace(/https:\/\/sesame\.com/g, `https://${WORKER_DOMAIN}`);
       text = text.replace(/wss:\/\/sesameai\.app/g, `wss://${WORKER_DOMAIN}`);
@@ -171,7 +172,7 @@ async function handleWebSocketRequest(request) {
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.delete('host');
     proxyHeaders.set('host', new URL(wsTarget).hostname);
-    proxyHeaders.set('origin', 'https://www.sesame.com');
+    proxyHeaders.set('origin', 'https://app.sesame.com');
     
     // Setup message forwarding
     const proxyWs = new WebSocket(wsTarget);
